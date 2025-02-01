@@ -1,0 +1,3 @@
+{
+    "allowed_checkpoints": ["start", "split1", "split2", "finish"]
+}

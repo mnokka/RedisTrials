@@ -1,0 +1,10 @@
+{  
+  "competitor_info": {
+    "allowed_keys": ["bib", "first_name", "last_name", "gender", "country", "category"],
+    "allowed_genders": ["male", "female", "na"],
+    "allowed_categories": [
+      "men20", "men30", "men40", "men50+",
+      "women20", "women30", "women40", "women50+"
+    ]
+  }
+}
