@@ -235,5 +235,76 @@ def get_times(bib_number):
     logging.info(f"Bib: {bib_number} timing info returned: {times}") 
     return jsonify(times)
 
+####################################################################################
+# Check competitor data
+#
+@app.route('/check_competitor/<bib_number>', methods=['GET'])
+def check_competitor(bib_number):
+    """
+    Check that competitor info in Redis is ok
+
+    curl -X GET http://localhost:5000/check_competitor/123
+
+    """
+    competitor_data = r.hgetall(f"competitor:{bib_number}")
+    
+    if not competitor_data:
+        logging.error(f"Competitor bib:{bib_number} not in Redis.")
+        return jsonify({"error": f"Competitor bib:{bib_number} not found."}), 404
+
+    missing_keys = [key for key in ALLOWED_COMPETITOR_INFO if key not in competitor_data]
+    if missing_keys:
+        logging.error(f"Missing field in competitor data: {', '.join(missing_keys)}")
+        return jsonify({"error": f"Missing fields: {', '.join(missing_keys)}"}), 400
+
+    if competitor_data['gender'] not in ALLOWED_GENDERS:
+        logging.error(f"Error in gender: {competitor_data['gender']}")
+        return jsonify({"error": f"Eroro in gender: {competitor_data['gender']}"}), 400
+
+    if competitor_data['category'] not in ALLOWED_CATEGORIES:
+        logging.error(f"Error in category: {competitor_data['category']}")
+        return jsonify({"error": f"Error in category: {competitor_data['category']}"}), 400
+
+    logging.info(f"Bib:{bib_number} competitor data OK: {competitor_data}")
+    return jsonify({"message": "Competitor data OK"}), 200
+
+#######################################################################################
+#
+# Check competitor timings
+
+@app.route('/checkpoints/<bib_number>', methods=['GET'])
+def check_checkpoints(bib_number):
+    """
+    Check checkpoints in Redis.
+    curl -X GET http://localhost:5000/checkpoints/123
+
+    """
+    race_data = r.hgetall(f"race:{bib_number}")
+    
+    if not race_data:
+        logging.error(f"Competitor bib:{bib_number} has no timing data")
+        return jsonify({"error": f"Competitor bib:{bib_number} has no timing data."}), 404
+
+    missing_checkpoints = ALLOWED_CHECKPOINTS - set(race_data.keys())
+    if missing_checkpoints:
+        logging.error(f"bib:{bib_number} missing checkpoints  {', '.join(missing_checkpoints)}")
+        return jsonify({"error": f"Missing checkpoints: {', '.join(missing_checkpoints)}"}), 400
+
+    invalid_checkpoints = [checkpoint for checkpoint in race_data.keys() if checkpoint not in ALLOWED_CHECKPOINTS]
+    if invalid_checkpoints:
+        logging.error(f"bib:{bib_number} Illegal checkpoints:  {', '.join(invalid_checkpoints)}")
+        return jsonify({"error": f"Illegla checkpoints: {', '.join(invalid_checkpoints)}"}), 400
+
+    for checkpoint, timestamp in race_data.items():
+        if not isinstance(timestamp, (int, float)):
+            logging.error(f"bib:{bib_number} broken timestamp bib:{bib_number} checkpoint:{checkpoint} - {timestamp}")
+            return jsonify({"error": f"Broken timestamp {checkpoint}: {timestamp}"}), 400
+
+    logging.info(f"Bib:{bib_number} checkpoint data is valid: {race_data}")
+    return jsonify({"message": f"Checkpoint data bib:{bib_number} is OK."}), 200
+
+
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
