@@ -7,6 +7,7 @@ import redis
 import json
 import logging
 import sys
+import re
 
 CHECKPOINTS_PATH="db.json"
 COMPETITOR_PATH="competitor.json"
@@ -101,8 +102,44 @@ if ALLOWED_GENDERS is None or ALLOWED_CATEGORIES is None or ALLOWED_COMPETITOR_I
     logging.error("*** Competitor data is invalid. Exiting the application ***")
     sys.exit(1)
 
+#######################################################################################
+# REST API HELPER FUNCTIONS
+
+def time_to_milliseconds(time_str):
+    # incoming time string format "hh:mm:ss:SSS" 
+    if not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}:\d{3}", time_str):
+        logging.error("*** Invalid incoming time format:{time_str}. Format is hh:MM:ss:SSS ***")
+        return None  
+
+    try:
+        h, m, s, ms = map(int, time_str.split(":"))
+
+        if not (0 <= h <= 99 and 0 <= m < 60 and 0 <= s < 60 and 0 <= ms < 1000):
+            logging.error("*** Error in incoming time format:{time_str}. Format is hh:MM:ss:SSS ***")
+            return None  
+
+        return ((h * 60 * 60) + (m * 60) + s) * 1000 + ms
+
+    except ValueError:
+        logging.error("*** Wrong incoming time format:{time_str}. Format is string hh:MM:ss:SSS ***")
+        return None  
 
 
+def milliseconds_to_time(ms):
+    if not isinstance(ms, int) or ms < 0:
+        logging.error("*** Incorrect millisecs format :{ms}.Is Redis data corrupted? ***")
+        return None  
+
+    h = ms // (60 * 60 * 1000)
+    ms %= (60 * 60 * 1000)
+
+    m = ms // (60 * 1000)
+    ms %= (60 * 1000)
+
+    s = ms // 1000
+    ms %= 1000
+
+    return f"{h:02}:{m:02}:{s:02}:{ms:03}"
 
 
 #######################################################################################
@@ -169,71 +206,86 @@ def create_competitor():
 #####################################################################################################
 # Update Bib number timing info
 #
-@app.route('/time', methods=['POST'])
+@app.route('/settimes', methods=['POST'])
 def push_time():
     """
-    Send defined time for Bib number (competitor). Format:
-    {
-    "bib": "123",
-    "times": {
-        "start": 10.0,  -->time values configured in db.config
-        "split1": 13.50,
-        "finish": 15.40
-     }  
-    }
+    Send defined time for Bib number (competitor). 
 
-    curl -X POST http://localhost:5000/time \
-     -H "Content-Type: application/json" \
-     -d '{"bib": "123", "times": {"start": 10.0, "split1": 13.50, "finish": 15.40}}'
+curl -X POST http://localhost:5000/settimes \
+-H "Content-Type: application/json" \
+-d '{
+      "bib": 123,
+      "settimes": {
+          "start":  "12:15:00:000",
+          "split1": "12:20:00:000",
+          "split2": "13:01:00:000",
+          "finish": "14:25:00:678"
+      }
+  }'
+
 
     """
-    data = request.json
-    bib = data.get("bib")
-    times = data.get("times") 
+    data = None
+    try:
+        data = request.json
+    except Exception as e:
+        logging.error(f"Error processing request: {str(e)}")
 
-    if not bib or not times:
-        logging.error("Error in sent config data format; missing data")
+    logging.info(f"data:{data}")
+    bib = data.get("bib")
+    settimes = data.get("settimes") 
+
+    if not bib or not settimes:
+        logging.error("Error in sent config data format; missing data (bib or settimes)")
         return jsonify({"error": "Missing data"}), 400
 
     logging.info(f"Time updates for Bib:{bib}")
     
     # check any missing time checkpoint
-    missing_checkpoints = ALLOWED_CHECKPOINTS - set(times.keys())
+    missing_checkpoints = ALLOWED_CHECKPOINTS - set(settimes.keys())
     if missing_checkpoints:
-        logging.error(f"Bib:{bib}  Missing checkpoints in data:{missing_checkpoint}")
+        logging.error(f"Bib:{bib}  Missing checkpoints in data:{missing_checkpoints}")
         return jsonify({"error": f"Missing checkpoints: {', '.join(missing_checkpoints)}"}), 400
 
     
     #check validity of time checkpoints
-    #if not set(times.keys()).issubset(ALLOWED_CHECKPOINTS):
-    invalid_checkpoints = [checkpoint for checkpoint in times.keys() if checkpoint not in ALLOWED_CHECKPOINTS]
+    invalid_checkpoints = [checkpoint for checkpoint in settimes.keys() if checkpoint not in ALLOWED_CHECKPOINTS]
     if invalid_checkpoints:
-        logging.error(f"Bib:{bib}  Invalid checkpoint(s): {', '.join(invalid_checkpoints)} in sent times configuration")
+        logging.error(f"Bib:{bib}  Invalid checkpoint(s): {', '.join(invalid_checkpoints)} in sent settimes configuration")
         return jsonify({"error": "Invalid checkpoint(s) in request"}), 400
 
     # -1 skip timing value update
-    for checkpoint, timestamp in times.items():
+    for checkpoint, timestamp in settimes.items():
         if timestamp != -1:
-            r.hset(f"race:{bib}", checkpoint, timestamp)
-            logging.info(f"Updated Bib: {bib} checkpoint: {checkpoint} timestamp: {timestamp}")
+            #timestamp_str = str(timestamp)
+            milliseconds = time_to_milliseconds(timestamp)
+            if milliseconds is None:
+                return jsonify({"error": "Invalid time format. Use string hh:mm:ss:SSS"}), 400
+            #r.zadd(f"race:{bib}", checkpoint, milliseconds)
+            r.zadd(f"race:{bib}", {checkpoint: milliseconds})
+            logging.info(f"Updated Bib: {bib} checkpoint: {checkpoint} timestamp: {timestamp} as millisecs:{milliseconds}")
     return jsonify({"message": f"Times updated for {bib}"}), 201
 
 #####################################################################################
 # Get Bib number timing info
 #
-@app.route('/times/<bib_number>', methods=['GET'])
+@app.route('/gettimes/<bib_number>', methods=['GET'])
 def get_times(bib_number):
     """
     Get Bib number timing info
-    curl -X GET http://localhost:5000/times/123
+    curl -X GET http://localhost:5000/gettimes/123
 
     """
-    times = r.hgetall(f"race:{bib_number}")
-    if not times:
+    race_data = r.zrange(f"race:{bib_number}", 0, -1, withscores=True)
+    if not race_data:
         logging.error(f"Bib: {bib_number} data not found")
         return jsonify({"error": "No data found"}), 404
-    logging.info(f"Bib: {bib_number} timing info returned: {times}") 
-    return jsonify(times)
+    
+    #converted_times = {key.decode(): milliseconds_to_time(int(value)) for key, value in times.items()}
+    converted_times = {checkpoint: milliseconds_to_time(int(timestamp)) for checkpoint, timestamp in race_data}
+
+    logging.info(f"Bib: {bib_number} timing info returned: {converted_times}") 
+    return jsonify(converted_times)
 
 ####################################################################################
 # Check competitor data
@@ -279,32 +331,32 @@ def check_checkpoints(bib_number):
     curl -X GET http://localhost:5000/checkpoints/123
 
     """
-    race_data = r.hgetall(f"race:{bib_number}")
-    
+    race_data = r.zrange(f"race:{bib_number}", 0, -1, withscores=True)
+
     if not race_data:
         logging.error(f"Competitor bib:{bib_number} has no timing data")
         return jsonify({"error": f"Competitor bib:{bib_number} has no timing data."}), 404
 
-    missing_checkpoints = ALLOWED_CHECKPOINTS - set(race_data.keys())
+    # Muutetaan race_data dictionary-muotoon, jossa checkpointit ovat avaimia ja aikaleimat arvoina
+    race_data_dict = {checkpoint: milliseconds_to_time(int(timestamp)) for checkpoint, timestamp in race_data}
+
+    missing_checkpoints = [checkpoint for checkpoint in ALLOWED_CHECKPOINTS if checkpoint not in race_data_dict]
     if missing_checkpoints:
         logging.error(f"bib:{bib_number} missing checkpoints  {', '.join(missing_checkpoints)}")
         return jsonify({"error": f"Missing checkpoints: {', '.join(missing_checkpoints)}"}), 400
 
-    invalid_checkpoints = [checkpoint for checkpoint in race_data.keys() if checkpoint not in ALLOWED_CHECKPOINTS]
+    invalid_checkpoints = [checkpoint for checkpoint in race_data_dict.keys() if checkpoint not in ALLOWED_CHECKPOINTS]
     if invalid_checkpoints:
         logging.error(f"bib:{bib_number} Illegal checkpoints:  {', '.join(invalid_checkpoints)}")
-        return jsonify({"error": f"Illegla checkpoints: {', '.join(invalid_checkpoints)}"}), 400
+        return jsonify({"error": f"Illegal checkpoints: {', '.join(invalid_checkpoints)}"}), 400
 
-    for checkpoint, timestamp in race_data.items():
-        if not isinstance(timestamp, (int, float)):
-            logging.error(f"bib:{bib_number} broken timestamp bib:{bib_number} checkpoint:{checkpoint} - {timestamp}")
-            return jsonify({"error": f"Broken timestamp {checkpoint}: {timestamp}"}), 400
 
-    logging.info(f"Bib:{bib_number} checkpoint data is valid: {race_data}")
-    return jsonify({"message": f"Checkpoint data bib:{bib_number} is OK."}), 200
+    logging.info(f"Bib:{bib_number} checkpoint data is valid: {race_data_dict}")
+    return jsonify(race_data_dict), 200
 
 
 
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+    #app.run(debug=True)

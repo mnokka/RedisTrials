@@ -1,0 +1,163 @@
+
+Race configurations used in these tests:
+----------------------------------------
+
+file db.json
+
+{
+    "allowed_checkpoints": ["start", "split1", "split2", "finish"]
+}
+
+file competitor.json
+
+{  
+  "competitor_info": {
+    "allowed_keys": ["bib", "first_name", "last_name", "gender", "country", "category"],
+    "allowed_genders": ["male", "female", "na"],
+    "allowed_categories": [
+      "men20", "men30", "men40", "men50+",
+      "women20", "women30", "women40", "women50+"
+    ]
+  }
+}
+
+
+Create 2 competitors:
+----------------------
+
+    curl -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+    "bib": "123",
+    "first_name": "Ellen",
+    "last_name": "Ripley",
+    "gender": "female",
+    "country": "USA",
+    "category": "women40"
+    }' \
+    http://localhost:5000/competitor
+
+    FEEDBACK--> {"message":"OK. Competitor created ok"}
+
+    
+    curl -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+    "bib": "55",
+    "first_name": "Will",
+    "last_name": "Smith",
+    "gender": "male",
+    "country": "USA",
+    "category": "men50+"
+    }' \
+    http://localhost:5000/competitor
+
+    FEEDBACK--> {"message":"OK. Competitor created ok"}
+
+
+Incorrect competitor creation:
+---------------------------------
+
+    curl -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+    "bib": "007",
+    "first_name": "James",
+    "last_name": "Bond",
+    "gender": "male",
+    "country": "UK",
+    "category": "WRONGENTRY"
+    }' \
+    http://localhost:5000/competitor
+
+    FEEDBACK--->{"error":"Category error: WRONGENTRY"}
+    REDIS LOG-->2025-02-01 20:57:14,996 - ERROR - Competitor Category error: WRONGENTRY
+
+Create BIB 123 timing data (add start time only,zero others set earlier):
+-------------------------------------------------------------------------
+
+curl -X POST http://localhost:5000/settimes \
+-H "Content-Type: application/json" \
+-d '{
+      "bib": 123,
+      "settimes": {
+          "start":  "12:15:00:000",
+          "split1": "00:00:00:000",
+          "split2": "00:00:00:000",
+          "finish": "00:00:00:000"
+      }
+  }'
+  FEEDBACK --> {"message":"Times updated for 123"}
+  REDIS LOG--> 2025-02-02 13:34:24,326 - INFO - Bib: 123 timing info returned: {'finish': '00:00:00:000', 'split1': '00:00:00:000', 'split2': '00:00:00:000', 'start': '12:15:00:000'}
+
+Create BIB 123 timing data (add start time only , -1 skip others):
+-----------------------------------------------------------------
+
+curl -X POST http://localhost:5000/settimes \
+-H "Content-Type: application/json" \
+-d '{
+      "bib": 123,
+      "settimes": {
+          "start":  "12:15:00:000",
+          "split1": -1,
+          "split2": -1,
+          "finish": -1
+      }
+  }'
+FEEDBACK --> {"message":"Times updated for 123"}
+REDIS LOG--> 2025-02-02 13:34:24,326 - INFO - Bib: 123 timing info returned: {'finish': '00:00:00:000', 'split1': '00:00:00:000', 'split2': '00:00:00:000', 'start': '12:15:00:000'}
+(or other values skipped if not zeroed earlier)
+
+
+
+Create BIB 123 timing data (add finish time only,zero others set earlier):
+-------------------------------------------------------------------------
+
+curl -X POST http://localhost:5000/settimes \
+-H "Content-Type: application/json" \
+-d '{
+      "bib": 123,
+      "settimes": {
+          "start":  "12:15:00:000",
+          "split1": "00:00:00:000",
+          "split2": "00:00:00:000",
+          "finish": "13:00:00:000"
+      }
+  }'
+FEEBACK--> {"message":"Times updated for 123"}
+
+
+
+Add BIB 123 timing data with missing entry:
+-------------------------------------------------
+
+    curl -X POST http://localhost:5000/settimes \
+     -H "Content-Type: application/json" \
+     -d '{"bib": "123", "times": {"start": 10.0,"split2": -1, "finish": -1}}'
+     FEEDBACK--> {"error":"Missing data"}
+     REDIS LOG--> 2025-02-01 20:55:52,747 - ERROR - Error in sent config data format; missing data (bib or times)
+
+Get BIB 123 timing data:
+-------------------------
+
+ curl -X GET http://localhost:5000/gettimes/123
+
+ FEEDBACK-->{"finish":"13:00:00:000","split1":"00:00:00:000","split2":"00:00:00:000","start":"12:15:00:000"}
+ REDIS LOG-->INFO - Bib: 123 timing info returned: {'split1': '00:00:00:000', 'split2': '00:00:00:000', 'start': '12:15:00:000', 'finish': '13:00:00:000'}
+
+
+Update BIB 123 start time:
+----------------------------
+
+curl -X POST http://localhost:5000/time \
+     -H "Content-Type: application/json" \
+     -d '{"bib": "123", "times": {"start": 11.1, "split1": -1, "split2": -1, "finish": -1}}'
+
+FEEDBACK--> {"message":"Times updated for 123"}
+
+
+Check competitor data validity (all keys)
+-----------------------------------------
+curl -X GET http://localhost:5000/check_competitor/123
+FEEDBACK-->{"message":"Competitor data OK"}
+
