@@ -1,0 +1,62 @@
+REST API 
+---------
+
+These examples are assuming db.json and competitor.json defined race data as in this repo.
+
+By changind configuration data you can for example add more split points or shoe size for the competitor
+
+
+1) Create new competitor: /competitor JSONDATA POST
+    
+    curl -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+    "bib": "123",
+    "first_name": "Ellen",
+    "last_name": "Ripley",
+    "gender": "female",
+    "country": "USA",
+    "category": "women40"
+    }' \
+    http://localhost:5000/competitor
+
+
+
+2) Get competitor info /getcompetitor GET
+
+curl -X GET http://localhost:5000/getcompetitor/123
+
+
+3) Get timing checkpoints /checkpoints/<bib_number> GET
+
+    curl -X GET http://localhost:5000/checkpoints/123
+    (duplicate for 4)
+
+
+4) Get competiror checkpoint timings /gettimes/<bib_number> GET
+   (duplicate for 3)
+
+    curl -X GET http://localhost:5000/gettimes/123
+
+5) Check competitor data (keys) validity  /check_competitor/<bib_number>' GET
+
+    curl -X GET http://localhost:5000/check_competitor/123
+
+6) Set competitor checkpoint timings (via BIB) /settimes POST
+
+use -1 to skip re-setting checkpoint, like split1
+Data format: hh:mm:ss:SSS
+max race lenght 99hours 59mins...
+
+curl -X POST http://localhost:5000/settimes \
+-H "Content-Type: application/json" \
+-d '{
+      "bib": 123,
+      "settimes": {
+          "start":  "12:15:00:000",
+          "split1": "12:20:00:000",
+          "split2": "13:01:00:000",
+          "finish": "14:25:00:678"
+      }
+  }'
+

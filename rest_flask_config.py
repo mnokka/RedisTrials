@@ -8,6 +8,8 @@ import json
 import logging
 import sys
 import re
+from flask import Response
+
 
 CHECKPOINTS_PATH="db.json"
 COMPETITOR_PATH="competitor.json"
@@ -288,7 +290,7 @@ def get_times(bib_number):
     return jsonify(converted_times)
 
 ####################################################################################
-# Check competitor data
+# Check competitor data (duplicate for gettimes)
 #
 @app.route('/check_competitor/<bib_number>', methods=['GET'])
 def check_competitor(bib_number):
@@ -353,10 +355,48 @@ def check_checkpoints(bib_number):
 
     logging.info(f"Bib:{bib_number} checkpoint data is valid: {race_data_dict}")
     return jsonify(race_data_dict), 200
+#########################################################################################
+#
+# Get competitor data
+
+@app.route('/getcompetitor/<bib>', methods=['GET'])
+def get_competitor(bib):
+    """
+    curl -X GET http://localhost:5000/getcompetitor/123
+    """
+    try:
+        competitor_data = r.hgetall(f"competitor:{bib}")
+
+        if not competitor_data:
+            logging.error(f"Competitor not found: {bib}")
+            return jsonify({"error": f"Competitor with BIB {bib} not found"}), 404
+
+        # Muunnetaan Redisin palauttamat tiedot merkkijonoiksi vain, jos ne ovat byte-muodossa
+        competitor_info = {
+            k if isinstance(k, str) else k.decode("utf-8"): 
+            v if isinstance(v, str) else v.decode("utf-8") 
+            for k, v in competitor_data.items()
+        }
+
+        # one string data return
+        #logging.info(f"Competitor data retrieved: {competitor_info}")
+        #return jsonify(competitor_info), 200
+        json_string = json.dumps(competitor_info, indent=2, ensure_ascii=False)
+        logging.info(f"bib:{bib} data returned:{competitor_info}")
+        return Response(response=json_string, mimetype='application/json')
+
+    except redis.RedisError as e:
+        logging.error(f"Redis error while fetching competitor: {e}")
+        return jsonify({"error": f"Redis error: {str(e)}"}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error while fetching competitor: {e}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 
 
-
+###########################################################################################
+# main 
+#
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
     #app.run(debug=True)
