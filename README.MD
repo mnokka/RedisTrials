@@ -83,6 +83,47 @@ Both are logging, Flask extensively related server operations.
 
 [REST_API_DOC.txt](./REST_API_DOC.txt)
 
+
+# Ranking the competitors
+
+As Redis does not offfer SQL type operations. Small demo script was written to create race data
+(competitors and results)
+
+When Redis and Flask are running, create a race: 
+*python3 test_scripts/create_race.py* 
+
+*python3 test_scripts/men30_results.py*
+
+Results:
+
+All competitor BIB numbers:['103', '104', '201', '203', '105', '202', '102', '205', '204', '101']
+
+
+All men30 competitors:[{'bib': '103', 'first_name': 'Jari', 'last_name': 'Korhonen', 'gender': 'male', 'country': 'Finland', 'category': 'men30'}, {'bib': '104', 'first_name': 'Pekka', 'last_name': 'Lahtinen', 'gender': 'male', 'country': 'Finland', 'category': 'men30'}, {'bib': '105', 'first_name': 'Antti', 'last_name': 'Nieminen', 'gender': 'male', 'country': 'Finland', 'category': 'men30'}, {'bib': '102', 'first_name': 'Mikko', 'last_name': 'Virtanen', 'gender': 'male', 'country': 'Finland', 'category': 'men30'}, {'bib': '101', 'first_name': 'Matti', 'last_name': 'Meikäläinen', 'gender': 'male', 'country': 'Finland', 'category': 'men30'}]
+
+
+men30 bib_numbers:['103', '104', '105', '102', '101']
+
+
+--------- Sorted m30 result, best first -------------
+
+Bib: 105, Name: Antti Nieminen, Finish Time: 09:30:00:000
+
+Bib: 101, Name: Matti Meikäläinen, Finish Time: 09:30:00:000
+
+Bib: 102, Name: Mikko Virtanen, Finish Time: 09:35:00:000
+
+Bib: 103, Name: Jari Korhonen, Finish Time: 09:40:00:000
+
+Bib: 104, Name: Pekka Lahtinen, Finish Time: 09:45:00:000
+
+
+In reality one should create commandline tools to fetch result list in categoryX,
+all competitors in country X , sorted by categoriess and results etc etc
+
+
+
+
 ## Access redis cli
 docker exec -it my_redis redis-cli
 
